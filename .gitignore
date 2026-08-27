@@ -1,0 +1,21 @@
+# OS
+.DS_Store
+
+# Env
+.env
+.env.local
+
+# JVM / Gradle
+build/
+.gradle/
+*.class
+  
+# IDE
+.idea/
+*.iml
+.vscode/
+
+# Node
+node_modules/
+dist/
+*.log
