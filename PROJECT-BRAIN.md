@@ -1,7 +1,7 @@
 # PROJECT-BRAIN
 
 > Fullstack todo list app — Kotlin API + React client. Read this file first when returning.
-> **Last updated:** 2026-08-27
+> **Last updated:** 2026-08-31
 
 ---
 
@@ -27,12 +27,13 @@
 | Purpose | Technology |
 |---|---|
 | Language | Kotlin 2.x |
-| Runtime | JDK 25 |
+| Runtime | JDK 25 (Temurin 25.0.4.1, `JAVA_HOME` set) |
 | Web framework | Javalin 6 |
+| Logging | `slf4j-simple` (required — without it Javalin logs nothing) |
 | Build tool | Gradle (Kotlin DSL) |
 | JSON | Jackson + `jackson-module-kotlin` |
 | DB access | HikariCP + JDBC (no ORM) |
-| Database | PostgreSQL (via Docker Compose) |
+| Database | PostgreSQL 17 (via Docker Compose) |
 | Schema | `schema.sql` (hand-written, no migrations tool) |
 
 **Repo:** `github.com/Joestarnova/todo-list-app` (`origin` already set)
@@ -42,49 +43,56 @@
 ## Current State
 
 ### What Currently Works
-- [x] Git repo initialized, `origin` remote configured, 1 commit (`a92fa47 initial commit`).
+- [x] Git repo initialized, `origin` remote configured.
 - [x] UI mockup exists: `ui-design/todo-app.html`.
-- _e.g. `GET /todos` returns seeded rows_
+- [x] **0.1 — Repo skeleton** done: folder layout, expanded `.gitignore`, root `README.md`.
+- [x] **0.2 — Postgres + schema** done: `docker-compose.yml` runs `postgres:17` as service `db`, `schema.sql` mounted into `/docker-entrypoint-initdb.d/`, `todos` table verified in the running container.
+- [x] DB connection details: host `localhost:5432`, db `todo`, user `todo`, password `todo`.
 
 ### What Is In Progress
-- [ ] **0.1 — Repo skeleton** (see Current Checkpoint below).
-- _e.g. wiring the client fetch layer to the API_
+- [ ] **1.1 — Gradle + Javalin hello world** (see Current Checkpoint below).
 
 ### What Is Broken / Incomplete
-- Nothing runs yet — no backend, no frontend, no build files.
-- `client/` is empty.
-- `server/` contains only `.idea/` (IDE files, untracked and not ignored).
-- No root `README.md`.
-- No `docker-compose.yml`.
-- `.gitignore` only has `.DS_Store` — missing `build/`, `.gradle/`, `node_modules/`, `.env`, `.idea/`.
+- No backend and no frontend yet — the database is the only running piece.
+- `server/` holds only `.gitkeep` (plus untracked `server/.idea/`); no Gradle build, no Kotlin source.
+- `client/` holds only `.gitkeep`.
+- No Gradle wrapper (`./gradlew`) exists yet, and the `gradle` CLI is not installed — see *What's Blocking Me*.
+- 0.2 work is written but **not yet committed**: `schema.sql` untracked, `docker-compose.yml` and `PROJECT-BRAIN.md` modified.
 
 ---
 
 ## Current Checkpoint
 
 ### Last Task Worked On
-- Created the repo, ran `git init`, pushed the initial commit with the UI mockup (2026-08-26).
+- **0.2 — Postgres + schema** — done (2026-08-31). Wrote `schema.sql` at the repo root, mounted it into the container's init dir, brought the stack up, and confirmed the `todos` table plus its `CHECK` constraint by inserting a valid row and having a whitespace-only row rejected. Kept `postgres:17` rather than the `16` in the original spec.
 
 ### Current Progress
-- [x] Repo created and pushed to GitHub.
-- [x] `client/` and `server/` folders exist (both effectively empty).
-- [ ] Folder layout finalized.
-- [ ] `.gitignore` covers JVM + Node.
-- [ ] Root `README.md` written.
-- [ ] `docker-compose.yml` stub added.
+- [x] `schema.sql` written (repo root).
+- [x] `schema.sql` mounted into the db container's init dir.
+- [x] `todos` table verified in a running container.
+- [ ] 0.2 committed and pushed.
+- [ ] Gradle wrapper exists in `/server`.
+- [ ] `build.gradle.kts` written.
+- [ ] `Main.kt` written.
+- [ ] `./gradlew run` boots and `/health` responds.
 
 ### Next Task
-**0.1 — Repo skeleton**
-- [ ] Confirm folder layout: `/server` (Kotlin), `/client` (React), root `README.md`, `docker-compose.yml`.
-- [ ] Expand `.gitignore`: `build/`, `.gradle/`, `node_modules/`, `.env`, `.idea/`.
-- [ ] Write a short README — what the app is + how to run each half (leave commands as TODO).
-- [ ] Commit and push.
-- **Done when:** empty repo pushed with the folder structure in place.
+**1.1 — Gradle + Javalin hello world**
+- [ ] `server/build.gradle.kts` with the Kotlin JVM plugin, `kotlin { jvmToolchain(25) }`, Javalin 6, and `slf4j-simple`.
+- [ ] Add the `application` plugin (and set `mainClass`) so `./gradlew run` works.
+- [ ] `Main.kt` starting Javalin on port **7070** with `GET /health` returning `{"status":"ok"}`.
+- **Done when:** `./gradlew run` boots and `curl localhost:7070/health` responds.
+
+Notes for this task:
+- `slf4j-simple` is not optional — leave it out and Javalin starts silently, so a failed boot looks identical to a working one.
+- Port **7070** for the API. Postgres stays on 5432; the Vite dev server will be 5173.
+- Nothing in 1.1 touches the database — this is a bare hello-world to prove the toolchain works. DB wiring comes later.
 
 ### What's Blocking Me
-- Nothing hard-blocking. Stack is decided.
-- Check before 0.2: JDK 25 installed and `JAVA_HOME` pointing at it; Docker running.
-- _e.g. waiting on Docker Desktop install_
+- **No way to run `./gradlew` yet.** The wrapper is generated by Gradle, and neither the wrapper nor a system `gradle` exists. Two ways out: `brew install gradle` then `gradle init` / `gradle wrapper` inside `/server`, or let IntelliJ scaffold a new Kotlin+Gradle project into `/server` (it writes the wrapper for you). Once the wrapper is committed, nobody needs the CLI again.
+- JDK 25 is installed and `JAVA_HOME` points at Temurin 25 — this check is cleared.
+- Docker must be running before any DB work (`open -a Docker`, then `docker info` to confirm).
+- Note for later schema edits: `/docker-entrypoint-initdb.d/` scripts run **only on first boot** of an empty volume. After changing `schema.sql`, run `docker compose down -v` to drop `todo-pgdata`, then `up -d` again.
 
 ---
 
@@ -95,14 +103,21 @@
 |---|---|
 | `PROJECT-BRAIN.md` | This file. Update it before ending each session. |
 | `ui-design/todo-app.html` | The visual target for the React client. |
-| `.gitignore` | Currently incomplete — part of task 0.1. |
-| `README.md` | `TBD` — run instructions for both halves. |
-| `docker-compose.yml` | `TBD` — Postgres service for local dev. |
-| `server/build.gradle.kts` | `TBD` — Javalin, Jackson, HikariCP, Postgres driver deps. |
-| `server/src/main/kotlin/` | `TBD` — `Main.kt` (Javalin app + routes), DB wiring. |
-| `server/src/main/resources/schema.sql` | `TBD` — table definitions, applied by hand. |
+| `.gitignore` | Done — covers OS, env, JVM/Gradle, IDE, Node. |
+| `README.md` | Written; run commands still TODO until each half exists. |
+| `docker-compose.yml` | Done — `postgres:17` service `db`, volume `todo-pgdata`, port 5432, `schema.sql` init mount. |
+| `schema.sql` | Done — the `todos` table (`id`, `text`, `done`, `created_at`). Edits require `docker compose down -v`. |
+| `server/build.gradle.kts` | `TBD` (task 1.1) — Kotlin JVM + application plugins, toolchain 25, Javalin 6, slf4j-simple. |
+| `server/src/main/kotlin/Main.kt` | `TBD` (task 1.1) — Javalin app on port 7070, `GET /health`. |
 | `client/src/` | `TBD` — React entrypoint, TanStack Query client, API layer. |
 | `client/vite.config.ts` | `TBD` — dev server + `/api` proxy to the backend. |
+
+### Ports
+| Service | Port |
+|---|---|
+| Postgres | 5432 |
+| Kotlin API | 7070 |
+| Vite dev server | 5173 (planned) |
 
 ---
 
@@ -111,7 +126,8 @@
 1. Read this file top to bottom (~1 min).
 2. `git log --oneline -5` and `git status` — confirm reality matches the checkpoint above.
 3. Jump to **Current Checkpoint → Next Task** and start on the first unchecked box.
-4. Start the database: `docker compose up -d` (root) — `TBD` until compose exists.
-5. Start backend: `./gradlew run` from `/server` — `TBD` until Gradle is set up.
+4. Start Docker Desktop (`open -a Docker`), then the database from the repo root: `docker compose up -d`.
+   Check the table: `docker compose exec db psql -U todo -d todo -c '\d todos'`
+5. Start backend: `./gradlew run` from `/server` — `TBD` until task 1.1 is done. Check: `curl localhost:7070/health`
 6. Start frontend: `npm run dev` from `/client` — `TBD` until Vite is scaffolded.
 7. **Before ending the session:** update *Current Progress*, *Next Task*, *What's Blocking Me*, and the *Last updated* date.
