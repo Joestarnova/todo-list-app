@@ -19,3 +19,6 @@ build/
 node_modules/
 dist/
 *.log
+
+#AI
+CLAUDE.md
