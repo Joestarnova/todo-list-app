@@ -1,7 +1,7 @@
 # PROJECT-BRAIN
 
 > Fullstack todo list app — Kotlin API + React client. Read this file first when returning.
-> **Last updated:** 2026-09-01
+> **Last updated:** 2026-09-02
 
 ---
 
@@ -31,7 +31,7 @@
 | Web framework | Javalin 6 |
 | Logging | `slf4j-simple` (required — without it Javalin logs nothing) |
 | Build tool | Gradle (Kotlin DSL) |
-| JSON | Jackson + `jackson-module-kotlin` |
+| JSON | Jackson + `jackson-module-kotlin` + `jackson-datatype-jsr310` |
 | DB access | HikariCP + JDBC (no ORM) |
 | Database | PostgreSQL 17 (via Docker Compose) |
 | Schema | `schema.sql` (hand-written, no migrations tool) |
@@ -49,57 +49,56 @@
 - [x] **0.2 — Postgres + schema** done: `docker-compose.yml` runs `postgres:17` as service `db`, `schema.sql` mounted into `/docker-entrypoint-initdb.d/`, `todos` table verified in the running container.
 - [x] DB connection details: host `localhost:5432`, db `todo`, user `todo`, password `todo`.
 - [x] **1.1 — Gradle + Javalin hello world** done: Gradle wrapper committed in `/server`, `build.gradle.kts` (Kotlin JVM 2.3.0 + `application`, toolchain 25, Javalin 6.7.0, slf4j-simple 2.0.17), `Main.kt` serving `GET /health` on port 7070.
-- [x] Working tree is clean — everything through 1.1 is committed (`a0219c7`, then `cbf08fd` ignoring `CLAUDE.md`).
+- [x] **1.2 — Jackson + config** done (`e67cccf`): `jackson-datatype-jsr310` added, a shared `ObjectMapper` registers `KotlinModule` + `JavaTimeModule` and disables `WRITE_DATES_AS_TIMESTAMPS`, handed to Javalin via `config.jsonMapper(JavalinJackson(objectMapper))`. `Config.kt` reads `DB_URL`, `DB_USER`, `DB_PASSWORD`, `PORT` from the environment with local defaults, and the app now starts on `Config.port`.
+- [x] Working tree is clean — everything through 1.2 is committed.
 
 ### What Is In Progress
-- [ ] **1.2 — Jackson + config** (see Current Checkpoint below).
+- [ ] **1.3 — HikariCP datasource** (see Current Checkpoint below).
 
 ### What Is Broken / Incomplete
 - No frontend yet; `client/` still holds only `.gitkeep`.
-- Backend is a hello-world only: no DB connection, no `/todos` routes, no Hikari pool.
-- `jackson-module-kotlin` 2.18.2 is declared in `build.gradle.kts` but **not yet wired into Javalin** — Javalin still uses its own default Jackson mapper, which has no Kotlin support.
-- No `Config` object — port 7070 and the DB credentials are not read from the environment anywhere.
-- `jackson-datatype-jsr310` (the `JavaTimeModule`) is **not** a dependency yet; needed before `created_at` can serialize.
+- Backend still only answers `GET /health`: no DB connection, no `/todos` routes, no Hikari pool.
+- No PostgreSQL JDBC driver on the classpath yet — `Config.dbUrl` is just a string nothing uses.
+- Nothing verifies the database is reachable, so the app currently starts happily with Docker stopped.
 
 ---
 
 ## Current Checkpoint
 
 ### Last Task Worked On
-- **1.1 — Gradle + Javalin hello world** — done (2026-09-01). The Gradle wrapper got scaffolded into `/server` (this cleared the old blocker), `build.gradle.kts` written with Kotlin JVM + `application`, `jvmToolchain(25)`, Javalin 6.7.0 and slf4j-simple. `Main.kt` starts Javalin on 7070 and answers `GET /health` with `{"status":"ok"}`. Committed as `a0219c7`; `jackson-module-kotlin` was added to the dependency block at the same time but is not registered with Javalin yet.
+- **1.2 — Jackson + config** — done (2026-09-02). `build.gradle.kts` gained `jackson-datatype-jsr310:2.18.2` (version-matched to `jackson-module-kotlin`). `Main.kt` builds a top-level `objectMapper` with `registerKotlinModule()` + `registerModule(JavaTimeModule())` + `disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS)` (so `java.time` values serialize as ISO strings, not epoch numbers) and passes it to Javalin as `JavalinJackson(objectMapper)`. `Config` is a Kotlin `object` (a singleton) using `System.getenv("X") ?: default`, with `PORT` parsed via `toIntOrNull()`. Committed as `e67cccf`.
 
 ### Current Progress
-- [x] Gradle wrapper exists and is committed in `/server`.
-- [x] `build.gradle.kts` written.
-- [x] `Main.kt` written — `GET /health` on port 7070.
-- [x] `./gradlew run` boots and `/health` responds.
-- [x] `jackson-module-kotlin` dependency declared.
-- [ ] `jackson-datatype-jsr310` dependency added.
-- [ ] `JavalinJackson` registered as the JSON mapper with both modules.
-- [ ] `Config` object reading env vars.
-- [ ] Data-class serialization sanity check.
+- [x] `jackson-datatype-jsr310` dependency added.
+- [x] `JavalinJackson` registered as the JSON mapper with both modules.
+- [x] `Config` object reading env vars.
+- [x] App starts on `Config.port`.
+- [ ] PostgreSQL JDBC driver dependency.
+- [ ] HikariCP dependency.
+- [ ] `Database.kt` exposing a `HikariDataSource`.
+- [ ] Startup `SELECT 1` health check that fails fast.
 
 ### Next Task
-**1.2 — Jackson + config**
-- [ ] Add `jackson-datatype-jsr310` alongside the existing `jackson-module-kotlin` (needed for `JavaTimeModule` / `created_at`).
-- [ ] Build an `ObjectMapper` that registers `KotlinModule` **and** `JavaTimeModule`, and hand it to Javalin as `JavalinJackson(mapper)` via `Javalin.create { it.jsonMapper(...) }`.
-- [ ] Small `Config` object reading `DB_URL`, `DB_USER`, `DB_PASSWORD`, `PORT` from the environment with local defaults (`jdbc:postgresql://localhost:5432/todo`, `todo`, `todo`, `7070`).
-- [ ] Have `Main.kt` start on `Config.port` instead of the hard-coded 7070.
-- [ ] Temp route returning a Kotlin data class (one with an `Instant`/`LocalDateTime` field) to confirm camelCase JSON.
-- **Done when:** a data class round-trips to JSON without a "no serializer" error.
+**1.3 — HikariCP datasource**
+- [ ] Add the PostgreSQL JDBC driver dependency (`org.postgresql:postgresql`) and HikariCP (`com.zaxxer:HikariCP`) to `server/build.gradle.kts`.
+- [ ] New `server/src/main/kotlin/Database.kt` building a `HikariDataSource` from `Config` (`jdbcUrl` = `Config.dbUrl`, `username` = `Config.dbUser`, `password` = `Config.dbPassword`, `maximumPoolSize` ~5 for local).
+- [ ] On startup, borrow a connection from the pool and run `SELECT 1`.
+- [ ] Fail fast with a clear message if the DB is down — don't let Javalin start on a broken database.
+- **Done when:** the app refuses to start with Docker stopped, and starts cleanly with it running.
 
 Notes for this task:
-- **Why this is needed at all:** Javalin bundles plain Jackson, which is a Java library — it can't see Kotlin constructor parameter names or handle non-nullable/default values. Without `KotlinModule` a data class either fails outright or deserializes with nulls in non-null fields.
-- **Why `JavaTimeModule` is separate:** plain Jackson doesn't know `java.time` types either; `created_at` would serialize as a nested object of fields instead of an ISO timestamp string.
-- Keep the version of `jackson-datatype-jsr310` matched to `jackson-module-kotlin` (2.18.2) to avoid mixing Jackson versions.
-- Env vars are read with `System.getenv("NAME") ?: "default"` — the `?:` (elvis) operator supplies the local fallback so the app still runs with nothing exported.
-- Nothing here connects to Postgres yet; `Config` just *holds* the DB values for the next task.
-- The temp sanity-check route is scaffolding — delete it once the real `/todos` routes exist.
+- **What a connection pool is:** opening a Postgres connection is expensive (TCP + auth + session setup). A pool opens a few up front, keeps them alive, and lends one out per request. Think of it like a small pool of shared library cards rather than applying for a new one every time you want a book.
+- **Why HikariCP:** it's the fast, boring default in the JVM world — the same pool Spring Boot ships with. It hands back a plain `javax.sql.DataSource`, so the rest of the code just calls `dataSource.getConnection()` and knows nothing about Hikari.
+- **Why the JDBC driver is separate:** HikariCP only manages connections; it doesn't know how to speak Postgres's wire protocol. The `org.postgresql:postgresql` jar is what actually understands `jdbc:postgresql://...` URLs. Without it the pool fails with "No suitable driver".
+- **Why `SELECT 1`:** the cheapest possible query. It proves the network, credentials, and database name are all correct. Hikari is lazy, so without this check a wrong password wouldn't surface until the first real request.
+- **Fail fast** means: crash immediately at startup with a readable message instead of booting a server that will 500 on every route. In Kotlin this is a `try/catch` around the check that prints the cause and calls `exitProcess(1)` (or rethrows).
+- Use `use { }` on the `Connection` and `Statement` — Kotlin's `use` closes the resource automatically when the block ends, returning the connection to the pool. Forgetting this leaks connections until the pool is exhausted.
+- Pool size 5 is deliberate for local dev: more connections than a single dev machine needs is wasted memory on the Postgres side.
+- Nothing in `Database.kt` should run SQL for todos yet — task 1.3 only proves the plumbing works.
 
 ### What's Blocking Me
-- Nothing blocking. The Gradle-wrapper blocker from 0.2/1.1 is resolved.
-- JDK 25 is installed and `JAVA_HOME` points at Temurin 25 — this check is cleared.
-- Docker must be running before any DB work (`open -a Docker`, then `docker info` to confirm).
+- Nothing blocking.
+- Docker must be running before testing the happy path (`open -a Docker`, then `docker info` to confirm). Testing the *sad* path is the point of this task — stop Docker (or `docker compose stop db`) and confirm the app refuses to boot.
 - Note for later schema edits: `/docker-entrypoint-initdb.d/` scripts run **only on first boot** of an empty volume. After changing `schema.sql`, run `docker compose down -v` to drop `todo-pgdata`, then `up -d` again.
 
 ---
@@ -115,9 +114,10 @@ Notes for this task:
 | `README.md` | Written; run commands still TODO until each half exists. |
 | `docker-compose.yml` | Done — `postgres:17` service `db`, volume `todo-pgdata`, port 5432, `schema.sql` init mount. |
 | `schema.sql` | Done — the `todos` table (`id`, `text`, `done`, `created_at`). Edits require `docker compose down -v`. |
-| `server/build.gradle.kts` | Done — Kotlin JVM 2.3.0 + `application`, toolchain 25, Javalin 6.7.0, slf4j-simple, jackson-module-kotlin. Task 1.2 adds `jackson-datatype-jsr310` here. |
-| `server/src/main/kotlin/Main.kt` | Done (hello world) — Javalin on 7070, `GET /health`. Task 1.2 edits it to register `JavalinJackson` and use `Config.port`. |
-| `server/src/main/kotlin/Config.kt` | `TBD` (task 1.2) — env-backed `DB_URL`, `DB_USER`, `DB_PASSWORD`, `PORT` with local defaults. |
+| `server/build.gradle.kts` | Done through 1.2 — Kotlin JVM 2.3.0 + `application`, toolchain 25, Javalin 6.7.0, slf4j-simple, jackson-module-kotlin + jsr310. Task 1.3 adds the Postgres JDBC driver and HikariCP here. |
+| `server/src/main/kotlin/Main.kt` | Done through 1.2 — Jackson mapper wired in, `GET /health` on `Config.port`. Task 1.3 adds the startup DB check here. |
+| `server/src/main/kotlin/Config.kt` | Done — env-backed `dbUrl`, `dbUser`, `dbPassword`, `port` with local defaults. |
+| `server/src/main/kotlin/Database.kt` | `TBD` (task 1.3) — builds the `HikariDataSource` from `Config` and runs the `SELECT 1` startup check. |
 | `server/gradlew` | Done — the Gradle wrapper, committed. Nobody needs a system `gradle` install any more. |
 | `client/src/` | `TBD` — React entrypoint, TanStack Query client, API layer. |
 | `client/vite.config.ts` | `TBD` — dev server + `/api` proxy to the backend. |
