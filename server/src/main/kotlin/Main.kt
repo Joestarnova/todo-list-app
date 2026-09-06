@@ -24,6 +24,7 @@ fun main() {
         System.err.println("Is Postgres running? Try: docker compose up -d")
         exitProcess(1)
     }
+
     val app = Javalin.create() { config ->
         config.jsonMapper(JavalinJackson(objectMapper))
     }.start(Config.port)
