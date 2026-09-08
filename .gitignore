@@ -22,3 +22,6 @@ dist/
 
 #AI
 CLAUDE.md
+
+#Generated on Build
+.kotlin/
