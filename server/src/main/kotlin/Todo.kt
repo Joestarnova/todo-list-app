@@ -12,6 +12,6 @@ data class CreateTodoRequest(
 )
 
 data class UpdateTodoRequest(
-    val text: String? = null,
-    val done: Boolean? = null,
+    val text: String,
+    val done: Boolean,
 )
