@@ -25,6 +25,8 @@ fun main() {
         exitProcess(1)
     }
 
+    val todoRepository = TodoRepository(dataSource)
+
     val app = Javalin.create() { config ->
         config.jsonMapper(JavalinJackson(objectMapper))
     }.start(Config.port)
@@ -32,4 +34,6 @@ fun main() {
     app.get("/health") { ctx ->
         ctx.json(mapOf("status" to "ok"))
     }
+
+    TodoRoutes.register(app, todoRepository)
 }
