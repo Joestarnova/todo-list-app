@@ -1,7 +1,7 @@
 # PROJECT-BRAIN
 
 > Fullstack todo list app — Kotlin API + React client. Read this file first when returning.
-> **Last updated:** 2026-09-09
+> **Last updated:** 2026-09-16
 
 ---
 
@@ -54,50 +54,60 @@
 - [x] **1.4 — Model + read/create repository** done (`43c1771`): `Todo.kt` holds the `Todo` data class + `CreateTodoRequest` / `UpdateTodoRequest`. `TodoRepository.kt` holds `findAll()`, `create(text)`, and the private file-level `ResultSet.toTodo()` extension. Verified by a throwaway `main` — rows landed in Postgres with server-generated `id` and `created_at`.
 - [x] **1.5 — Remaining repository methods** done (`f498f67`): `findById(id): Todo?`, `update(id, text, done): Todo?`, `delete(id): Boolean`, `deleteCompleted(): Int`. All six methods exercised manually — hit *and* miss paths both confirmed (`null`, `null`, `false`), DB verified empty afterwards.
 - [x] **1.6 — REST routes** done (`b18d2c6`): `TodoRoutes.kt` holds `TodoRoutes.register(app, repository)` with all five endpoints — `GET /api/todos`, `POST /api/todos` (201), `PUT /api/todos/{id}`, `DELETE /api/todos/{id}` (204), `DELETE /api/todos?done=true`. Handlers are thin: parse -> one repository call -> status. Misses throw Javalin's `NotFoundResponse`; `?done=true` missing throws `BadRequestResponse`. The 1.5 throwaway block is gone from `Main.kt`, `.kotlin/` is ignored (`801e0c3`), and the `VAlUES` typo is fixed. Working tree clean.
+- [x] **1.7 — Validation + error handling** done (`b24c760`): `ValidationException(message) : RuntimeException` in `Todo.kt`; `TodoRoutes.validateText()` trims, rejects blank, caps at `MAX_TEXT_LENGTH = 500`, and **returns the trimmed string** — POST and PUT both store the cleaned value. `Main.kt` registers `app.exception(ValidationException::class.java)` → 400 `{"error": ...}`, `app.exception(Exception::class.java)` → logs the stack trace via SLF4J and returns a generic 500, and `app.error(404)` → JSON instead of Javalin's HTML page. All five curl checks passed, including the trim case and `/health`.
 - [x] **Update contract decided:** `PUT /todos/{id}` sends **both** `text` and `done`. `UpdateTodoRequest` fields are therefore non-nullable, so `jackson-module-kotlin` rejects a request missing either one — the type declaration *is* the validation.
 
 ### What Is In Progress
-- [ ] **1.7 — Validation + error handling** (see Current Checkpoint below).
+- [ ] **1.8 — CORS, logging, request testing** (see Current Checkpoint below).
 
 ### What Is Broken / Incomplete
 - No frontend yet; `client/` still holds only `.gitkeep`.
-- **No input validation.** `POST {"text": " "}` currently inserts a blank todo. Task 1.7.
-- **Unhandled exceptions leak.** A crash inside a handler returns Javalin's default 500, which can expose internals. Task 1.7.
-- **Unknown URLs return HTML,** not JSON — breaks any JSON client. Task 1.7.
-- **Error body shape is inconsistent.** Javalin's `NotFoundResponse` / `BadRequestResponse` render `{title, status, type, details}`, not the `{"error": "..."}` shape the API should speak everywhere.
-- `ctx.pathParam("id").toLong()` throws `NumberFormatException` on `/api/todos/abc`, which becomes a 500 instead of a 400. Worth fixing alongside 1.7.
+- **No CORS headers.** A browser on `localhost:5173` will have its requests blocked before the frontend even exists. Task 1.8.
+- **No request logging.** You cannot see the frontend's calls arriving. Task 1.8.
+- **No repeatable API check.** Every verification so far has been hand-typed curl. Task 1.8 turns that into `api.http`.
+- **No automated tests at all.** Task 1.9.
+- **Thrown 404s lost their detail.** `app.error(404)` overwrites the body for *every* 404, so `NotFoundResponse("No todo with id 42")` now returns the generic `{"error": "404 not found"}`. Fix by adding `app.exception(NotFoundResponse::class.java)` — exception handlers write the body before error handlers run, so specific messages win while unmatched URLs still get the generic one.
+- **`/api/todos/abc` returns 500, not 400.** `ctx.pathParam("id").toLong()` throws `NumberFormatException`, which the catch-all turns into "internal server error" — but it's bad input, not a server fault. Fix: `toLongOrNull() ?: throw ValidationException("id must be a number")` in both the PUT and DELETE handlers.
+- Error message capitalization is inconsistent (`"Text must not be blank"` vs `"text must be at most ..."`). Cosmetic.
 
 ---
 
 ## Current Checkpoint
 
 ### Last Task Worked On
-- **1.6 — REST routes** — done and committed (2026-09-09, `b18d2c6`). Learned: a route handler's job is translation, not decision-making — read the path param, deserialize the body, call one repository method, pick a status code. The repository's `Todo?` / `Boolean` returns pay off exactly here: `?: throw NotFoundResponse(...)` turns "no such row" into a real 404 without a separate existence query. Javalin catches its own `HttpResponseException` subclasses and converts them to real responses, so error paths never set a status by hand. And `/api/todos/{id}` vs `/api/todos?done=true` are two separate registrations — a query string is not part of the path.
+- **1.7 — Validation + error handling** — done and committed (2026-09-16, `b24c760`). Learned: there are **two** layers of safety net and they catch different things — `app.exception(X)` fires when an exception escapes a handler, `app.error(code)` fires when the *response status* ends up at `code`, including when no route matched and nothing was ever thrown. Javalin resolves exception handlers by walking the class hierarchy nearest-match-first, so a catch-all on `Exception` does not swallow the specific `ValidationException` handler. A custom exception was worth defining because Javalin's `BadRequestResponse` renders its own JSON shape and the API had promised `{"error": ...}`. And the security habit: `logger.error(msg, e)` puts the stack trace in *your* logs while the client gets a generic message — a leaked trace advertises your library versions and file paths.
 
 ### Current Progress
-- [x] All five endpoints registered in `TodoRoutes.kt` and committed.
-- [x] Throwaway 1.5 block removed from `Main.kt`; `.kotlin/` ignored; `VAlUES` typo fixed.
-- [ ] `ValidationException` + `validateText()` helper.
-- [ ] Wire validation into POST and PUT.
-- [ ] `app.exception(...)` handlers in `Main.kt`.
-- [ ] `app.error(404)` JSON handler.
-- [ ] Verify with curl.
+- [x] `ValidationException` + `validateText()` (trim → blank check → 500-char cap → return trimmed).
+- [x] Validation wired into POST and PUT.
+- [x] `app.exception(ValidationException)` → 400, `app.exception(Exception)` → logged generic 500.
+- [x] `app.error(404)` → JSON not-found.
+- [x] Verified with curl: blank → 400, 501 chars → 400, `/api/nope` → JSON 404, valid text → 201 and trimmed, `/health` → ok.
+- [ ] `bundledPlugins.enableCors` for `http://localhost:5173`.
+- [ ] Request logging.
+- [ ] `api.http` with one request per endpoint.
 
 ### Next Task
-**1.7 — Validation + error handling**
-- [ ] Reject blank text and text over ~500 chars with `400` and body `{"error": "text must not be blank"}`.
-- [ ] `app.exception(Exception::class.java)` — log it, return a generic `500`. Never leak stack traces.
-- [ ] `app.error(404)` — JSON not-found instead of Javalin's HTML page.
-- **Done when:** posting `{"text": " "}` returns a 400 with a readable message.
+**1.8 — CORS, logging, request testing**
+- [ ] Enable CORS for `http://localhost:5173` (Vite's dev port) — Javalin 6 uses `config.bundledPlugins.enableCors { ... }`.
+- [ ] Add request logging so the frontend's calls are visible as they hit the server.
+- [ ] Save an `api.http` file (or Postman collection) with a request per endpoint — the regression check for the rest of the build.
+- **Done when:** every request in `api.http` passes in one run.
 
 Notes for this task:
-- **Two layers of safety net, and why both are needed.** `app.exception(X::class.java)` fires when an exception of type `X` escapes a handler. `app.error(404)` fires whenever the *response status* ends up 404 — including when no route matched at all, which no exception handler can catch. Exception handlers catch throws; error handlers catch status codes.
-- **Why a custom `ValidationException` instead of Javalin's `BadRequestResponse`:** `BadRequestResponse` renders Javalin's own JSON shape (`{title, status, type, details}`). Defining `class ValidationException(message: String) : RuntimeException(message)` and mapping it yourself gives the exact `{"error": "..."}` body the API promises.
-- **`isBlank()` vs `isEmpty()`:** `isEmpty()` is only true for `""` — it lets `" "` straight through. `isBlank()` covers whitespace-only too. That single choice is the whole "Done when" condition.
-- **Trim, then validate, then store the trimmed value.** `validateText()` should *return* the cleaned string so `"  buy milk  "` never reaches the database.
-- **Handler order does not swallow HTTP responses.** Javalin checks for an exact-class user handler before falling back to its built-in `HttpResponseException` mapper, so registering `app.exception(Exception::class.java)` does **not** hijack `NotFoundResponse` / `BadRequestResponse`. They still produce their own status codes.
-- **Log the real exception, return a generic message.** `logger.error("...", e)` on the server; `{"error": "internal server error"}` to the client. The stack trace is for you, not for whoever is poking at the API.
-- **Validation belongs in the route layer here.** The repository reports facts (`null`, `false`, a row count); the routes decide HTTP policy. A blank-text rule is an input-contract rule, so it sits with the handler.
+- **What CORS actually is.** A browser rule, not a server rule. A page served from `localhost:5173` calling an API on `localhost:7070` is a *cross-origin* request (different port = different origin), and the browser blocks it unless the API replies with an `Access-Control-Allow-Origin` header naming that origin. Enabling CORS means "send that header." curl ignores all of this, which is why nothing has broken yet — the problem appears the moment a real browser is involved.
+- **Preflight requests.** For anything beyond a simple GET — a PUT, a DELETE, a POST with `Content-Type: application/json` — the browser first sends an `OPTIONS` request asking permission, *then* the real one. The bundled plugin answers those automatically. If PUT/DELETE fail from the browser but work in curl, a failing preflight is the first suspect.
+- **Name the origin, don't use `anyHost()`.** `anyHost()` is convenient and tempting; it tells every website on the internet that it may call your API. Fine for a throwaway demo, a bad habit to form.
+- **Why logging matters here.** Once the frontend exists, "nothing happened" is ambiguous — did the request never leave the browser, or did it arrive and fail? A request log answers that instantly. Javalin's `config.requestLogger.http { ctx, ms -> ... }` gives you method, path, status, and duration.
+- **What `api.http` is.** A plain text file of HTTP requests that VS Code (REST Client extension) or IntelliJ can execute inline — `###` separates requests. It replaces hand-typed curl with something re-runnable, and it lives in git so future-you inherits the checks. Use a variable (`@host = http://localhost:7070`) so one line changes every request later.
+- **Order the file so it is self-contained.** POST a todo first, then use its id for PUT and DELETE, and finish with the `?done=true` cleanup — so one top-to-bottom run leaves the database as it found it. That is what makes "every request passes in one run" a meaningful check rather than a guess about leftover rows.
+
+### Then
+**1.9 — Backend tests**
+- [ ] JUnit 5 + `javalin-testtools`; happy path per endpoint plus the blank-text 400.
+- [ ] Point tests at a separate database (`todos_test`) **or** truncate the table in `@BeforeEach`.
+- **Done when:** `./gradlew test` is green and the command is documented in the README.
+- Note: this is where `api.http` stops being enough — it needs a running server and a human to read the output. Tests run themselves and fail loudly. Also note `Main.kt` currently builds the app inline; 1.9 will want a `createApp(repository): Javalin` function so a test can build one without `main()` starting a real server on port 7070.
 
 ### What's Blocking Me
 - Nothing blocking.
@@ -113,22 +123,24 @@ Notes for this task:
 |---|---|
 | `PROJECT-BRAIN.md` | This file. Update it before ending each session. |
 | `ui-design/todo-app.html` | The visual target for the React client. |
-| `.gitignore` | Covers OS, env, JVM/Gradle, IDE, Node. **Needs `server/.kotlin/` added.** |
-| `README.md` | Written; run commands still TODO until each half exists. |
+| `.gitignore` | Covers OS, env, JVM/Gradle, IDE, Node, and `server/.kotlin/`. |
+| `README.md` | Written; run commands still TODO. Task 1.9 must add `./gradlew test`. |
 | `docker-compose.yml` | Done — `postgres:17` service `db`, volume `todo-pgdata`, port 5432, `schema.sql` init mount. |
 | `schema.sql` | Done — the `todos` table (`id` BIGSERIAL, `text` TEXT, `done` BOOLEAN, `created_at` TIMESTAMPTZ). Edits require `docker compose down -v`. |
-| `server/build.gradle.kts` | Done through 1.6 — Kotlin JVM 2.3.0 + `application`, toolchain 25, Javalin 6.7.0, slf4j-simple, Jackson (kotlin + jsr310), HikariCP, Postgres JDBC. Task 1.7 needs no new dependency. |
-| `server/src/main/kotlin/Main.kt` | Done — fail-fast DB check, Jackson mapper, `GET /health`, then `TodoRoutes.register(app, todoRepository)`. Task 1.7 adds the `app.exception(...)` and `app.error(404)` handlers here. |
+| `server/build.gradle.kts` | Done through 1.7 — Kotlin JVM 2.3.0 + `application`, toolchain 25, Javalin 6.7.0, slf4j-simple, Jackson (kotlin + jsr310), HikariCP, Postgres JDBC. Task 1.8 needs no new dependency (CORS is bundled); **task 1.9 adds `javalin-testtools` + JUnit 5**. |
+| `server/src/main/kotlin/Main.kt` | Done — fail-fast DB check, Jackson mapper, two `app.exception` handlers, `app.error(404)`, `GET /health`, `TodoRoutes.register(...)`. Task 1.8 adds CORS + request logger to the `Javalin.create { }` config block. |
 | `server/src/main/kotlin/Config.kt` | Done — env-backed `dbUrl`, `dbUser`, `dbPassword`, `port` with local defaults. |
 | `server/src/main/kotlin/Database.kt` | Done — `createDataSource()` builds the `HikariDataSource`; `checkConnection()` runs `SELECT 1`. |
-| `server/src/main/kotlin/Todo.kt` | Done — `Todo`, `CreateTodoRequest(text)`, `UpdateTodoRequest(text, done)` (both non-null: PUT contract). Task 1.7 adds `ValidationException`. |
+| `server/src/main/kotlin/Todo.kt` | Done — `Todo`, `CreateTodoRequest(text)`, `UpdateTodoRequest(text, done)` (both non-null: PUT contract), `ValidationException`. |
 | `server/src/main/kotlin/TodoRepository.kt` | Done — all SQL lives here: `findAll`, `create`, `findById`, `update`, `delete`, `deleteCompleted`, private `ResultSet.toTodo()`. |
-| `server/src/main/kotlin/TodoRoutes.kt` | Done (1.6) — `register(app, repository)` with the five REST endpoints, thin handlers only. Task 1.7 adds `validateText()` and calls it from POST and PUT. |
+| `server/src/main/kotlin/TodoRoutes.kt` | Done (1.6-1.7) — `register(app, repository)` with the five REST endpoints plus the private `validateText()` / `MAX_TEXT_LENGTH`. Handlers stay thin. |
 | `server/gradlew` | Done — the Gradle wrapper, committed. Nobody needs a system `gradle` install any more. |
+| `server/api.http` | `TBD` (task 1.8) — one request per endpoint, runnable top-to-bottom. The regression check for the rest of the build. |
+| `server/src/test/kotlin/` | `TBD` (task 1.9) — JUnit 5 + `javalin-testtools`. |
 | `client/src/` | `TBD` — React entrypoint, TanStack Query client, API layer. |
 | `client/vite.config.ts` | `TBD` — dev server + `/api` proxy to the backend. |
 
-### API Surface (as of 1.6; 1.7 adds the error contract)
+### API Surface (as of 1.7)
 | Method | Path | Body | Success |
 |---|---|---|---|
 | GET | `/api/todos` | — | 200, `Todo[]` |
@@ -137,14 +149,14 @@ Notes for this task:
 | DELETE | `/api/todos/{id}` | — | 204 / 404 |
 | DELETE | `/api/todos?done=true` | — | 200, count |
 
-**Error contract (task 1.7):** every failure responds with `{"error": "<readable message>"}` — `400` for validation failures, `404` for unknown ids *and* unknown routes, `500` generic for anything unexpected.
+**Error contract (done, 1.7):** every failure responds with `{"error": "<readable message>"}` — `400` for validation failures, `404` for unknown ids *and* unknown routes, `500` generic for anything unexpected (real stack trace goes to the server log only). Text is trimmed and capped at 500 characters.
 
 ### Ports
 | Service | Port |
 |---|---|
 | Postgres | 5432 |
 | Kotlin API | 7070 |
-| Vite dev server | 5173 (planned) |
+| Vite dev server | 5173 (planned — the origin CORS must allow, task 1.8) |
 
 ---
 
