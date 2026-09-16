@@ -15,3 +15,5 @@ data class UpdateTodoRequest(
     val text: String,
     val done: Boolean,
 )
+
+class ValidationException(message: String) : RuntimeException(message)

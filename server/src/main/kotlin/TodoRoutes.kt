@@ -11,14 +11,14 @@ object TodoRoutes {
 
         app.post("/api/todos") { ctx ->
             val request = ctx.bodyAsClass<CreateTodoRequest>()
-            val todo = repository.create(request.text)
+            val todo = repository.create(validateText(request.text))
             ctx.status(201).json(todo)
         }
 
         app.put("/api/todos/{id}") { ctx ->
             val id = ctx.pathParam("id").toLong()
             val request = ctx.bodyAsClass<UpdateTodoRequest>()
-            val todo = repository.update(id, request.text, request.done)
+            val todo = repository.update(id, validateText(request.text), request.done)
                 ?: throw NotFoundResponse("No todo with id $id")
             ctx.json(todo)
         }
@@ -37,5 +37,18 @@ object TodoRoutes {
             }
             ctx.json(mapOf("deleted" to repository.deleteCompleted()))
         }
+    }
+
+    private const val MAX_TEXT_LENGTH = 500
+
+    private fun validateText(text: String): String {
+        val trimmed = text.trim()
+        if (trimmed.isBlank()) {
+            throw ValidationException("Text must not be blank")
+        }
+        if (trimmed.length > MAX_TEXT_LENGTH) {
+            throw ValidationException("Text must be at most $MAX_TEXT_LENGTH characters")
+        }
+        return trimmed
     }
 }

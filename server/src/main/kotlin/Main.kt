@@ -5,11 +5,14 @@ import com.fasterxml.jackson.module.kotlin.registerKotlinModule
 import io.javalin.Javalin
 import io.javalin.json.JavalinJackson
 import kotlin.system.exitProcess
+import org.slf4j.LoggerFactory
 
 private val objectMapper: ObjectMapper = ObjectMapper()
     .registerKotlinModule()
     .registerModule(JavaTimeModule())
     .disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS)
+
+private val logger = LoggerFactory.getLogger("Main")
 
 fun main() {
     val dataSource = try {
@@ -30,6 +33,19 @@ fun main() {
     val app = Javalin.create() { config ->
         config.jsonMapper(JavalinJackson(objectMapper))
     }.start(Config.port)
+
+    app.exception(ValidationException::class.java) { e, ctx ->
+        ctx.status(400).json(mapOf("error" to (e.message ?: "invalid request")))
+    }
+
+    app.exception(Exception::class.java) { e, ctx ->
+        logger.error("Unhandled exception: ${ctx.method()} ${ctx.path()}", e)
+        ctx.status(500).json(mapOf("error" to "internal server error"))
+    }
+
+    app.error(404) { ctx ->
+        ctx.json(mapOf("error" to "404 not found"))
+    }
 
     app.get("/health") { ctx ->
         ctx.json(mapOf("status" to "ok"))
