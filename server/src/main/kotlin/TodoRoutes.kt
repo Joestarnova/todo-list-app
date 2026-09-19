@@ -16,7 +16,8 @@ object TodoRoutes {
         }
 
         app.put("/api/todos/{id}") { ctx ->
-            val id = ctx.pathParam("id").toLong()
+            val id = ctx.pathParam("id").toLongOrNull()
+                ?: throw ValidationException("id must be a number")
             val request = ctx.bodyAsClass<UpdateTodoRequest>()
             val todo = repository.update(id, validateText(request.text), request.done)
                 ?: throw NotFoundResponse("No todo with id $id")
@@ -24,7 +25,8 @@ object TodoRoutes {
         }
 
         app.delete("/api/todos/{id}") { ctx ->
-            val id = ctx.pathParam("id").toLong()
+            val id = ctx.pathParam("id").toLongOrNull()
+                ?: throw ValidationException("id must be a number")
             if (!repository.delete(id)) {
                 throw NotFoundResponse("No todo with id $id")
             }

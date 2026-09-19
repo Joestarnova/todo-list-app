@@ -6,6 +6,7 @@ import io.javalin.Javalin
 import io.javalin.json.JavalinJackson
 import kotlin.system.exitProcess
 import org.slf4j.LoggerFactory
+import io.javalin.http.NotFoundResponse
 
 private val objectMapper: ObjectMapper = ObjectMapper()
     .registerKotlinModule()
@@ -32,6 +33,16 @@ fun main() {
 
     val app = Javalin.create() { config ->
         config.jsonMapper(JavalinJackson(objectMapper))
+
+        config.bundledPlugins.enableCors { cors ->
+            cors.addRule { rule ->
+                rule.allowHost("http://localhost:5173")
+            }
+        }
+
+        config.requestLogger.http { ctx, ms ->
+            logger.info("${ctx.method()} ${ctx.path()} -> ${ctx.status()} (${ms.toInt()}ms)")
+        }
     }.start(Config.port)
 
     app.exception(ValidationException::class.java) { e, ctx ->
@@ -43,8 +54,8 @@ fun main() {
         ctx.status(500).json(mapOf("error" to "internal server error"))
     }
 
-    app.error(404) { ctx ->
-        ctx.json(mapOf("error" to "404 not found"))
+    app.exception(NotFoundResponse::class.java) { e, ctx ->
+        ctx.status(404).json(mapOf("error" to (e.message ?: "not found")))
     }
 
     app.get("/health") { ctx ->
