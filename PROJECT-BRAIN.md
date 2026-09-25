@@ -1,7 +1,7 @@
 # PROJECT-BRAIN
 
 > Fullstack todo list app — Kotlin API + React client. Read this file first when returning.
-> **Last updated:** 2026-09-21
+> **Last updated:** 2026-09-25
 
 ---
 
@@ -59,12 +59,14 @@
 - [x] **Both 1.7 leftovers fixed:** thrown 404s keep their message, and a non-numeric id returns 400 instead of 500. All checks re-run and passing.
 - [x] **1.9 — Backend tests** done, deliberately trimmed. `build.gradle.kts` gained JUnit 5 (via `junit-bom:5.11.4`), `javalin-testtools:6.7.0`, `junit-platform-launcher`, and `tasks.test { useJUnitPlatform() }`. `Main.kt` now exposes `createApp(repository): Javalin` — builds and configures but does **not** start — and `main()` is down to the DB check plus `createApp(TodoRepository(dataSource)).start(Config.port)`. `src/test/kotlin/TodoApiTest.kt` holds four tests: GET on an empty table, POST creates (checked in the response *and* in the DB), blank text → 400 with nothing written, unknown id → 404. `./gradlew test` green.
 - [x] **Update contract decided:** `PUT /todos/{id}` sends **both** `text` and `done`. `UpdateTodoRequest` fields are therefore non-nullable, so `jackson-module-kotlin` rejects a request missing either one — the type declaration *is* the validation.
+- [x] **2.1 — Vite + React 19 + TS scaffold** done (`a1fdb16`): `create-vite` 9.2.1 `react-ts` template in `/client`, boilerplate stripped (`App.tsx` returns `null`, `index.css` empty, only `public/favicon.svg` kept). `"strict": true` confirmed in `tsconfig.app.json`. `@/` → `src/` alias in both `tsconfig.app.json` (`paths`) and `vite.config.ts` (`resolve.alias` via `fileURLToPath`). `server.proxy` forwards `/api` to `http://localhost:7070`. Both `.gitkeep` placeholders removed.
 
 ### What Is In Progress
-- Nothing in progress. The backend is done through 1.9; the frontend has not started.
+- **2.2 — Tailwind v4 setup + theme tokens** — next up. Backend done through 1.9, client scaffold done (2.1).
 
 ### What Is Broken / Incomplete
-- No frontend yet; `client/` still holds only `.gitkeep`.
+- The client renders a blank page — no UI yet, by design until 2.2+.
+- `tsconfig.app.json` uses `"baseUrl": "."` plus `"ignoreDeprecations": "6.0"` to silence TypeScript 6's `baseUrl` deprecation. Works, but `baseUrl` isn't needed — `"@/*": ["./src/*"]` alone resolves relative to the tsconfig. Optional cleanup.
 - **Test coverage is partial by choice.** Four tests, not one per endpoint: PUT, the `?done=true` bulk delete, and the 500-char cap are untested. Enough to catch real breakage and learn the mechanics; extend if the backend starts changing often.
 - **Tests share the dev database.** `@BeforeEach` runs `TRUNCATE todos RESTART IDENTITY`, so `./gradlew test` wipes local todos and cannot run while something else is using the table. A separate `todos_test` database is the fix if this ever bites.
 - **The Postman collection lives only in the Postman app**, by choice — it is not in git and would vanish with a reinstall. Accepted, because 1.9 replaces it with real tests.
@@ -75,34 +77,44 @@
 ## Current Checkpoint
 
 ### Last Task Worked On
+- **2.1 — Vite + React 19 + TS scaffold** — done (2026-09-25, `a1fdb16`). Learned: the `@/` alias has to be declared **twice** because two different tools read the code — TypeScript (`paths` in `tsconfig.app.json`) only type-checks, while Vite (`resolve.alias`) actually bundles; declare it in one and the other breaks. There are **two tsconfigs** because the code runs in two places: `tsconfig.app.json` for `src/` (browser), `tsconfig.node.json` for `vite.config.ts` (Node). The **dev proxy makes CORS irrelevant in development**: the browser only ever talks to `localhost:5173`, and Vite forwards `/api/*` to 7070 behind the scenes — which is why `fetch` calls must use a **relative** path like `/api/todos`.
 - **1.9 — Backend tests (trimmed)** — done (2026-09-21). Scope was cut deliberately: no separate test database, no test per endpoint. Learned: **`testImplementation` and `implementation` are separate classpaths** — test code sees the app, the app never sees the tests. A **BOM** (`platform("org.junit:junit-bom:5.11.4")`) pins one version across a family of artifacts so their pieces cannot drift. Gradle still defaults to JUnit 4, so without `useJUnitPlatform()` it finds zero tests and reports **BUILD SUCCESSFUL** — "all passed" and "nothing ran" look identical, and the same trap catches a `@Test` annotation left off by accident; read the test count, not the colour. `@BeforeEach` runs per test method, not per class, which is what keeps tests independent — and JUnit builds a **new instance of the test class for every test**, so shared setup like the connection pool belongs in a `companion object` or you leak one pool per test. `JavalinTest.test(createApp(repo)) { _, client -> }` starts the app on a random free port and shuts it down afterwards, which is the entire reason `createApp` had to stop calling `.start()`. Assert on the **database as well as the response** — an endpoint can return a convincing 201 while writing nothing. Also: Gradle's up-to-date caching means a fast green build may not have run anything; `--rerun-tasks` forces it.
 - **1.8 — CORS, logging, API check** — done (2026-09-19). Learned: **CORS is a browser rule, not a server rule** — curl never cared, which is why nothing broke before the frontend existed; the server's only job is to send `Access-Control-Allow-Origin`, and a browser refuses to hand the response to the requesting JavaScript when that header is missing. Name the origin instead of `anyHost()`. Javalin's request pipeline runs **BEFORE → HTTP → AFTER_MATCHED → ERROR → AFTER**, and that ordering is the whole 404 bug: exception handlers fire in the HTTP stage, `app.error(code)` fires in the later ERROR stage and overwrites whatever body was already written. So the fix was *removing* `app.error(404)`, not adding a handler alongside it. One `app.exception(NotFoundResponse::class.java)` covers both cases, because Javalin throws `EndpointNotFound` for unmatched routes and that class **extends `NotFoundResponse`** — the same nearest-match-up-the-hierarchy resolution that stops the catch-all on `Exception` swallowing the specific handlers. Also: `toLong()` throws, `toLongOrNull()` returns null — prefer the `OrNull` form for anything arriving from outside the program, so *you* decide what bad input means. And a restart lesson: `./gradlew run` compiles once and runs that build; editing the source afterwards changes nothing until Ctrl+C and re-run. The first round of checks failed purely because the old JVM was still up.
 - **1.7 — Validation + error handling** — done and committed (2026-09-16, `b24c760`). Learned: there are **two** layers of safety net and they catch different things — `app.exception(X)` fires when an exception escapes a handler, `app.error(code)` fires when the *response status* ends up at `code`, including when no route matched and nothing was ever thrown. Javalin resolves exception handlers by walking the class hierarchy nearest-match-first, so a catch-all on `Exception` does not swallow the specific `ValidationException` handler. A custom exception was worth defining because Javalin's `BadRequestResponse` renders its own JSON shape and the API had promised `{"error": ...}`. And the security habit: `logger.error(msg, e)` puts the stack trace in *your* logs while the client gets a generic message — a leaked trace advertises your library versions and file paths.
 
 ### Current Progress
-- [x] JUnit 5 + `javalin-testtools` + `useJUnitPlatform()` in `build.gradle.kts`.
-- [x] `createApp(repository): Javalin` extracted; `main()` only does the DB check and `.start(Config.port)`.
-- [x] `TodoApiTest` with `TRUNCATE todos RESTART IDENTITY` in `@BeforeEach` and a shared pool in a `companion object`.
-- [x] Four tests green: GET empty, POST creates, blank → 400, unknown id → 404.
-- [ ] Add a "Tests" section to `README.md` — `./gradlew test`, plus the warning that it truncates the dev table.
+- [x] 2.1 scaffold committed (`a1fdb16`).
+- [ ] If not done yet: run 2.1's check — with the backend up, `await (await fetch('/api/todos')).json()` in the browser console on 5173 returns an array. Proves the proxy works end to end.
+- [ ] Leftover from 1.9: add a "Tests" section to `README.md` — `./gradlew test`, plus the warning that it truncates the dev table.
 
 ### Next Task
-**2.1 — Scaffold the React client**
-- [ ] `npm create vite@latest` in `/client` — React + TypeScript template.
-- [ ] Tailwind CSS v4 and TanStack Query installed and wired up.
-- [ ] Dev server runs on 5173 and renders something.
-- **Done when:** `npm run dev` serves a page that successfully fetches `GET /api/todos` from the Kotlin API in a real browser.
+**2.2 — Tailwind v4 setup + theme tokens**
+- [ ] Install `tailwindcss` + `@tailwindcss/vite` in `/client`, and add `tailwindcss()` to `plugins` in `vite.config.ts` next to `react()`.
+- [ ] In `src/index.css`: `@import "tailwindcss";` then an `@theme` block with the mockup's oklch palette:
+  | Token | Value |
+  |---|---|
+  | bg | `oklch(0.18 0.006 260)` |
+  | surface | `oklch(0.24 0.006 260)` |
+  | border | `oklch(0.32 0.008 260)` |
+  | text | `oklch(0.92 0.008 260)` |
+  | muted | `oklch(0.62 0.008 260)` |
+  | accent | `oklch(0.55 0.13 250)` |
+- [ ] Load Inter (400/500/600) via Google Fonts and set it as the default sans font (`--font-sans` in `@theme`).
+- **Done when:** a test div using `bg-bg text-muted font-sans` matches the mockup's colors.
 
 Notes for this task:
-- **This is the first time CORS actually matters.** Everything up to now was curl and JUnit, neither of which enforces it. If a request works in curl but fails in the browser console with a CORS message, the origin in `Main.kt` is the first place to look — it allows exactly `http://localhost:5173`, so a different port means a blocked request.
-- **Vite's proxy is the alternative to CORS**, not an addition to it: `server.proxy` in `vite.config.ts` makes the browser see `/api` as same-origin and forwards it to 7070. Worth knowing both exist; CORS is already working, so start there and treat the proxy as a fallback.
-- **TanStack Query owns server state.** Do not copy todos into `useState` — the cache is the source of truth. `useQuery` for the list, `useMutation` plus `invalidateQueries` for create/update/delete.
-- **`ui-design/todo-app.html` is the visual target.** Read the markup and classes from it rather than inventing a new layout.
+- **v4 is configured in CSS, not `tailwind.config.js`.** There is no config file and no `npx tailwindcss init` — anything online that shows one is v3 and doesn't apply.
+- **Token names become class names.** `--color-bg` in `@theme` generates `bg-bg`, `text-bg`, `border-bg`, …; `--color-muted` generates `text-muted`, and so on. The `--color-` prefix is what tells Tailwind it's a color. So the variable *names* matter as much as the values.
+- **oklch** = lightness (0–1), chroma (colorfulness), hue (angle). All the greys share hue 260 with tiny chroma, which is why they read as a slightly cool dark theme instead of flat grey.
+- **Font loading:** the Google Fonts `<link>` tags go in `client/index.html`'s `<head>`. Loading the font and *using* it are separate steps — the link downloads Inter, `--font-sans` makes it the default.
+- The test div is throwaway — remove it once the colors are confirmed.
 
 ### Then
-**2.2+ — Wire the client to the API**
+**2.3+ — Wire the client to the API**
+- [ ] TanStack Query installed and wired up.
 - [ ] API layer (`fetch` wrappers), then the list, create, toggle, delete and clear-completed flows.
-- [ ] Match `ui-design/todo-app.html`.
+- [ ] Match `ui-design/todo-app.html` — read the markup and classes from it rather than inventing a new layout.
+- **TanStack Query owns server state.** Do not copy todos into `useState` — the cache is the source of truth. `useQuery` for the list, `useMutation` plus `invalidateQueries` for create/update/delete.
 
 ### What's Blocking Me
 - Nothing blocking.
@@ -132,8 +144,10 @@ Notes for this task:
 | `server/gradlew` | Done — the Gradle wrapper, committed. Nobody needs a system `gradle` install any more. |
 | *(Postman collection)* | The six-request API check for 1.8. Lives in the Postman app only, deliberately not in the repo — superseded by the 1.9 tests. |
 | `server/src/test/kotlin/TodoApiTest.kt` | Done (1.9) — four tests against `createApp(repository)` via `JavalinTest`, `TRUNCATE` in `@BeforeEach`, shared pool + Jackson mapper in a `companion object`. Run with `./gradlew test`. |
-| `client/src/` | `TBD` — React entrypoint, TanStack Query client, API layer. |
-| `client/vite.config.ts` | `TBD` — dev server + `/api` proxy to the backend. |
+| `client/src/` | Scaffolded (2.1) — `main.tsx` entrypoint, `App.tsx` returns `null`, `index.css` empty. 2.2 fills `index.css` with Tailwind + the `@theme` tokens; later the TanStack Query client and API layer. |
+| `client/vite.config.ts` | Done (2.1) — React plugin, `@` alias, `/api` proxy to `localhost:7070`. 2.2 adds the Tailwind plugin. |
+| `client/tsconfig.app.json` | Done (2.1) — strict mode + `@/*` path mapping (currently via `baseUrl` — see *Broken / Incomplete*). |
+| `client/index.html` | Template default. 2.2 adds the Google Fonts `<link>` tags for Inter. |
 
 ### API Surface (as of 1.7)
 | Method | Path | Body | Success |
@@ -151,7 +165,7 @@ Notes for this task:
 |---|---|
 | Postgres | 5432 |
 | Kotlin API | 7070 |
-| Vite dev server | 5173 (planned — already allowed by CORS as of 1.8) |
+| Vite dev server | 5173 — proxies `/api/*` to 7070 (also allowed by CORS since 1.8) |
 
 ---
 
@@ -164,5 +178,5 @@ Notes for this task:
    Check the table: `docker compose exec db psql -U todo -d todo -c '\d todos'`
    Wipe it clean: `docker compose exec db psql -U todo -d todo -c 'TRUNCATE todos RESTART IDENTITY;'`
 5. Start backend: `./gradlew run` from `/server`. Check: `curl localhost:7070/health` → `{"status":"ok"}`
-6. Start frontend: `npm run dev` from `/client` — `TBD` until Vite is scaffolded.
+6. Start frontend: `npm run dev` from `/client` → `http://localhost:5173`. The backend (step 5) must be running too, or `/api` calls fail with a proxy error.
 7. **Before ending the session:** update *Current Progress*, *Next Task*, *What's Blocking Me*, and the *Last updated* date.
