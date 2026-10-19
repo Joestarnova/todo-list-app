@@ -1,3 +1,5 @@
+import { TodoList } from "@/components/TodoList";
+
 function App() {
   return (
     <div className="min-h-screen bg-bg text-text flex justify-center py-16 px-5">
@@ -8,6 +10,7 @@ function App() {
           </h1>
           <p className="text-sm text-muted">1 of 2 remaining</p>
         </header>
+        <TodoList />
       </div>
     </div>
   );
