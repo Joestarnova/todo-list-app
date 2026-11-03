@@ -1,4 +1,5 @@
 import { useTodos } from "@/hooks/useTodos";
+import { TodoItem } from "@/components/TodoItem";
 
 export function TodoList() {
   const { data: todos, isPending, isError, error } = useTodos();
@@ -24,7 +25,7 @@ export function TodoList() {
   return (
     <div className="flex flex-col gap-2">
       {todos.map((todo) => (
-        <div key={todo.id}>{todo.text}</div>
+        <TodoItem key={todo.id} todo={todo} />
       ))}
     </div>
   );
