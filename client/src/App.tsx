@@ -1,6 +1,7 @@
 import { TodoList } from "@/components/TodoList";
 import { Header } from "@/components/Header";
 import { AddTodoForm } from "@/components/AddTodoForm";
+import { ClearCompleted } from "@/components/ClearCompleted";
 
 function App() {
   return (
@@ -9,6 +10,7 @@ function App() {
         <Header />
         <AddTodoForm />
         <TodoList />
+        <ClearCompleted />
       </div>
     </div>
   );
