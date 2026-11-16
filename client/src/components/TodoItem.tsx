@@ -1,8 +1,9 @@
 import type { Todo } from "@/types";
-import { useUpdateTodo } from "@/hooks/useTodos";
+import { useDeleteTodo, useUpdateTodo } from "@/hooks/useTodos";
 
 export function TodoItem({ todo }: { todo: Todo }) {
   const updateTodo = useUpdateTodo();
+  const deleteTodo = useDeleteTodo();
 
   return (
     <div className="flex items-center gap-3 rounded-[10px] border border-border bg-surface px-3.5 py-3">
@@ -26,6 +27,15 @@ export function TodoItem({ todo }: { todo: Todo }) {
       >
         {todo.text}
       </span>
+      <button
+        type="button"
+        aria-label="Delete"
+        onClick={() => deleteTodo.mutate(todo.id)}
+        disabled={deleteTodo.isPending}
+        className="flex-none cursor-pointer px-1.5 py-1 text-base leading-none text-muted"
+      >
+        X
+      </button>
     </div>
   );
 }
